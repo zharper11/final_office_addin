@@ -116,17 +116,35 @@ def save_api_key():
         return jsonify({"error": "userId and apiKey are required"}), 400
 
     try:
-        # Validate API key format (basic check)
+        # Validate API key format
         if not api_key.startswith('sk-') or len(api_key) < 20:
             return jsonify({"error": "Invalid API key format"}), 400
 
-        # Upsert item with required `id` field
-        container.upsert_item({
-            "id": user_id,
-            "userId": user_id,
-            "apiKey": api_key,
-            "lastUpdated": datetime.utcnow().isoformat()
-        })
+        # First, get existing document if it exists
+        query = f"SELECT * FROM c WHERE c.userId = '{user_id}'"
+        items = list(container.query_items(query=query, enable_cross_partition_query=True))
+        
+        if items:
+            # Update existing document
+            doc = items[0]
+            doc['apiKey'] = api_key
+            doc['lastUpdated'] = datetime.utcnow().isoformat()
+            container.upsert_item(doc)
+        else:
+            # Create new document
+            container.upsert_item({
+                "id": user_id,
+                "userId": user_id,
+                "apiKey": api_key,
+                "lastUpdated": datetime.utcnow().isoformat(),
+                "metrics": {
+                    'total_tokens': 0,
+                    'training_runs': 0,
+                    'sessions': [],
+                    'last_updated': datetime.utcnow().isoformat()
+                }
+            })
+            
         return jsonify({"message": "API key saved successfully"}), 200
 
     except Exception as e:
